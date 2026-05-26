@@ -51,7 +51,13 @@ Retourne un JSON structuré avec un tableau 'questions' contenant chaque questio
     });
 
     if (!response.ok) {
-      throw new Error(`Pollinations API returned ${response.status}`);
+      const errText = await response.text();
+      console.error('Pollinations error:', {
+        status: response.status,
+        keyPrefix: pollinationsKey?.substring(0, 5),
+        error: errText?.substring(0, 500),
+      });
+      throw new Error(`Pollinations API returned ${response.status}: ${errText}`);
     }
 
     const data = await response.json();
