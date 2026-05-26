@@ -30,9 +30,16 @@ export default async function handler(req, res) {
     }
 
     const systemPrompt = `Tu es un expert en recrutement et en intelligence artificielle spécialisé dans l'analyse de CV.
-Analyse le CV suivant et génère 15 questions d'entretien personnalisées basées sur les compétences, l'expérience et les formations du candidat.
+Analyse le CV suivant et génère exactement 15 questions d'entretien personnalisées basées sur les compétences, l'expérience et les formations du candidat.
 Les questions doivent être pertinentes, professionnelles et progressives en difficulté.
-Retourne un JSON structuré avec un tableau 'questions' contenant chaque question.`;
+IMPORTANT: Retourne UNIQUEMENT un JSON valide au format suivant, sans aucun texte avant ou après:
+{
+  "questions": [
+    "Première question?",
+    "Deuxième question?",
+    ...
+  ]
+}`;
 
     const response = await fetch('https://gen.pollinations.ai/v1/chat/completions', {
       method: 'POST',
@@ -63,19 +70,44 @@ Retourne un JSON structuré avec un tableau 'questions' contenant chaque questio
     const data = await response.json();
     const content = data.choices?.[0]?.message?.content || '';
 
-    // Extract JSON from response
-    const jsonMatch = content.match(/\{[\s\S]*\}/);
+    console.log('Mistral response content:', content.substring(0, 500));
+
+    // Extract JSON from response - handle various formats
     let questions = [];
+    
+    // Try to extract JSON object
+    const jsonMatch = content.match(/\{[\s\S]*\}/);
     if (jsonMatch) {
       try {
         const parsed = JSON.parse(jsonMatch[0]);
-        questions = parsed.questions || [];
-      } catch {
-        questions = content.split('\n').filter(q => q.trim().length > 0).slice(0, 15);
+        // Handle different JSON structures
+        if (Array.isArray(parsed)) {
+          questions = parsed.map(q => typeof q === 'string' ? q : q.text || q.question || JSON.stringify(q));
+        } else if (parsed.questions && Array.isArray(parsed.questions)) {
+          questions = parsed.questions.map(q => typeof q === 'string' ? q : q.text || q.question || JSON.stringify(q));
+        } else if (parsed.text) {
+          questions = [parsed.text];
+        }
+      } catch (e) {
+        console.error('JSON parse error:', e.message);
+        // Fallback: split by newlines
+        questions = content.split('\n').filter(q => q.trim().length > 10 && !q.startsWith('{')).slice(0, 15);
       }
     } else {
-      questions = content.split('\n').filter(q => q.trim().length > 0).slice(0, 15);
+      // Fallback: split by newlines or numbering
+      questions = content
+        .split('\n')
+        .filter(q => q.trim().length > 10)
+        .map(q => q.replace(/^\d+\.\s*/, '').trim())
+        .slice(0, 15);
     }
+
+    // Ensure we have valid questions
+    if (!Array.isArray(questions) || questions.length === 0) {
+      questions = generateDefaultQuestions();
+    }
+
+    console.log('Extracted questions:', questions.length, questions.slice(0, 2));
 
     return res.status(200).json({
       interviewId: `interview_${Date.now()}`,
