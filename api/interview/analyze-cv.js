@@ -41,7 +41,7 @@ Retourne un JSON structuré avec un tableau 'questions' contenant chaque questio
         'Authorization': `Bearer ${pollinationsKey}`,
       },
       body: JSON.stringify({
-        model: 'openai',
+        model: 'mistral',
         messages: [
           { role: 'system', content: systemPrompt },
           { role: 'user', content: `Analyse ce CV et génère les questions:\n\n${cvText}` },

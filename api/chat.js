@@ -36,7 +36,7 @@ export default async function handler(req, res) {
         'Authorization': `Bearer ${pollinationsKey}`,
       },
       body: JSON.stringify({
-        model: 'openai',
+        model: 'mistral',
         messages: messages,
         temperature: 0.7,
         max_tokens: 2000,

@@ -79,7 +79,7 @@ export default async function handler(req, res) {
             },
             { role: "user", content: `Voici le CV : ${cvText}` },
           ],
-          model: "openai",
+          model: "mistral",
           temperature: 0.3,
         }),
       });
