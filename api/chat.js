@@ -28,14 +28,20 @@ export default async function handler(req, res) {
     const messages = Array.isArray(conversationHistory) ? conversationHistory : [];
     messages.push({ role: 'user', content: message });
 
-    // Call Pollinations API with retry logic
+    // Call Pollinations API with retry logic and model fallbacks
     let response;
     let lastError;
-    const maxRetries = 3;
-    const baseDelay = 1000;
+    const maxRetries = 5;
+    const baseDelay = 2000;
+    const models = ['mistral', 'openai', 'deepseek', 'gemini'];
+    let modelIndex = 0;
 
     for (let attempt = 0; attempt < maxRetries; attempt++) {
+      const currentModel = models[modelIndex % models.length];
+      
       try {
+        console.log(`Chat attempt ${attempt + 1}/${maxRetries} with model: ${currentModel}`);
+        
         response = await fetch('https://gen.pollinations.ai/v1/chat/completions', {
           method: 'POST',
           headers: {
@@ -43,7 +49,7 @@ export default async function handler(req, res) {
             'Authorization': `Bearer ${pollinationsKey}`,
           },
           body: JSON.stringify({
-            model: 'mistral',
+            model: currentModel,
             messages: messages,
             temperature: 0.7,
             max_tokens: 2000,
@@ -51,17 +57,20 @@ export default async function handler(req, res) {
         });
 
         if (response.ok) {
+          console.log(`Chat success with model ${currentModel}`);
           break;
         }
 
         const errText = await response.text();
         lastError = errText;
+        console.error(`Chat model ${currentModel} failed with ${response.status}`);
 
         // Retry on 429 (rate limit) or 502 (bad gateway)
-        if (response.status === 429 || response.status === 502) {
+        if (response.status === 429 || response.status === 502 || response.status === 403) {
           if (attempt < maxRetries - 1) {
-            const delay = baseDelay * Math.pow(2, attempt);
-            console.log(`Chat rate limited (${response.status}). Retrying in ${delay}ms...`);
+            modelIndex++;
+            const delay = baseDelay * Math.pow(2, Math.floor(attempt / models.length));
+            console.log(`Chat switching to ${models[modelIndex % models.length]} in ${delay}ms...`);
             await new Promise(resolve => setTimeout(resolve, delay));
             continue;
           }
@@ -73,8 +82,9 @@ export default async function handler(req, res) {
           throw error;
         }
         lastError = error.message;
-        const delay = baseDelay * Math.pow(2, attempt);
-        console.log(`Chat request failed. Retrying in ${delay}ms...`);
+        modelIndex++;
+        const delay = baseDelay * Math.pow(2, Math.floor(attempt / models.length));
+        console.log(`Chat error. Trying ${models[modelIndex % models.length]} in ${delay}ms...`);
         await new Promise(resolve => setTimeout(resolve, delay));
       }
     }

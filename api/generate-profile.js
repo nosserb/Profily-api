@@ -64,14 +64,20 @@ export default async function handler(req, res) {
         return res.status(400).json({ error: "Le champ cvText est obligatoire." });
       }
 
-      // Retry logic for rate limiting
+      // Retry logic with model fallbacks for rate limiting
       let response;
       let lastError;
-      const maxRetries = 3;
-      const baseDelay = 1000;
+      const maxRetries = 5;
+      const baseDelay = 2000;
+      const models = ['mistral', 'openai', 'deepseek', 'gemini'];
+      let modelIndex = 0;
 
       for (let attempt = 0; attempt < maxRetries; attempt++) {
+        const currentModel = models[modelIndex % models.length];
+        
         try {
+          console.log(`CV analysis attempt ${attempt + 1}/${maxRetries} with model: ${currentModel}`);
+          
           response = await fetch("https://gen.pollinations.ai/v1/chat/completions", {
             method: "POST",
             headers: {
@@ -87,20 +93,25 @@ export default async function handler(req, res) {
                 },
                 { role: "user", content: `Voici le CV : ${cvText}` },
               ],
-              model: "mistral",
+              model: currentModel,
               temperature: 0.3,
             }),
           });
 
-          if (response.ok) break;
+          if (response.ok) {
+            console.log(`CV analysis success with model ${currentModel}`);
+            break;
+          }
 
           const errText = await response.text();
           lastError = errText;
+          console.error(`Model ${currentModel} failed with ${response.status}`);
 
-          if (response.status === 429 || response.status === 502) {
+          if (response.status === 429 || response.status === 502 || response.status === 403) {
             if (attempt < maxRetries - 1) {
-              const delay = baseDelay * Math.pow(2, attempt);
-              console.log(`Rate limited (${response.status}). Retrying in ${delay}ms...`);
+              modelIndex++;
+              const delay = baseDelay * Math.pow(2, Math.floor(attempt / models.length));
+              console.log(`Rate/Auth error. Switching to ${models[modelIndex % models.length]} in ${delay}ms...`);
               await new Promise(resolve => setTimeout(resolve, delay));
               continue;
             }
@@ -108,9 +119,11 @@ export default async function handler(req, res) {
           throw new Error(`HTTP ${response.status}`);
         } catch (error) {
           if (attempt === maxRetries - 1) {
-            return res.status(502).json({ error: `Pollinations HTTP ${lastError?.status || error.message}`, details: lastError?.slice?.(0, 500) || error.message });
+            return res.status(502).json({ error: `Pollinations HTTP ${error.message}`, details: lastError?.slice?.(0, 500) || error.message });
           }
-          const delay = baseDelay * Math.pow(2, attempt);
+          modelIndex++;
+          const delay = baseDelay * Math.pow(2, Math.floor(attempt / models.length));
+          console.log(`Error. Trying ${models[modelIndex % models.length]} in ${delay}ms...`);
           await new Promise(resolve => setTimeout(resolve, delay));
         }
       }

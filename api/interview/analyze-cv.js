@@ -35,14 +35,20 @@ Les questions doivent être pertinentes, professionnelles et progressives en dif
 IMPORTANT: Retourne UNIQUEMENT un JSON valide sous cette forme EXACTE, sans aucun texte avant ou après:
 {"questions": ["Question 1?", "Question 2?", "Question 3?", "Question 4?", "Question 5?", "Question 6?", "Question 7?", "Question 8?", "Question 9?", "Question 10?", "Question 11?", "Question 12?", "Question 13?", "Question 14?", "Question 15?"]}`;
 
-    // Retry logic for rate limiting
+    // Retry logic with multiple model fallbacks
     let response;
     let lastError;
-    const maxRetries = 3;
-    const baseDelay = 1000; // 1 second
+    const maxRetries = 5;
+    const baseDelay = 2000; // 2 seconds - increased for rate limiting
+    const models = ['mistral', 'openai', 'deepseek', 'gemini']; // Fallback models
+    let modelIndex = 0;
 
     for (let attempt = 0; attempt < maxRetries; attempt++) {
+      const currentModel = models[modelIndex % models.length];
+      
       try {
+        console.log(`Attempt ${attempt + 1}/${maxRetries} with model: ${currentModel}`);
+        
         response = await fetch('https://gen.pollinations.ai/v1/chat/completions', {
           method: 'POST',
           headers: {
@@ -50,27 +56,41 @@ IMPORTANT: Retourne UNIQUEMENT un JSON valide sous cette forme EXACTE, sans aucu
             'Authorization': `Bearer ${pollinationsKey}`,
           },
           body: JSON.stringify({
-            model: 'mistral',
+            model: currentModel,
             messages: [
               { role: 'system', content: systemPrompt },
               { role: 'user', content: `Analyse ce CV et génère les questions:\n\n${cvText}` },
             ],
             temperature: 0.7,
+            max_tokens: 2000,
           }),
         });
 
         if (response.ok) {
+          console.log(`Success with model ${currentModel}`);
           break; // Success, exit retry loop
         }
 
         const errText = await response.text();
         lastError = errText;
+        console.error(`Model ${currentModel} failed with ${response.status}: ${errText.substring(0, 200)}`);
 
-        // If 429 (too many requests) or 502 (bad gateway), retry
+        // If 429 (too many requests) or 502 (bad gateway), retry with delay or switch model
         if (response.status === 429 || response.status === 502) {
           if (attempt < maxRetries - 1) {
-            const delay = baseDelay * Math.pow(2, attempt); // Exponential backoff
-            console.log(`Rate limited (${response.status}). Retrying in ${delay}ms... (attempt ${attempt + 1}/${maxRetries})`);
+            // Try different model on next attempt for 429/502
+            modelIndex++;
+            const delay = baseDelay * Math.pow(2, Math.floor(attempt / models.length)); // Exponential backoff per model cycle
+            console.log(`Rate limited/Gateway error. Switching to ${models[modelIndex % models.length]} in ${delay}ms...`);
+            await new Promise(resolve => setTimeout(resolve, delay));
+            continue;
+          }
+        } else if (response.status === 403) {
+          // 403 might be auth issue, try different model
+          if (attempt < maxRetries - 1) {
+            modelIndex++;
+            const delay = baseDelay * Math.pow(2, Math.floor(attempt / models.length));
+            console.log(`Auth error. Switching to ${models[modelIndex % models.length]} in ${delay}ms...`);
             await new Promise(resolve => setTimeout(resolve, delay));
             continue;
           }
@@ -82,14 +102,15 @@ IMPORTANT: Retourne UNIQUEMENT un JSON valide sous cette forme EXACTE, sans aucu
           throw error;
         }
         lastError = error.message;
-        const delay = baseDelay * Math.pow(2, attempt);
-        console.log(`Request failed: ${error.message}. Retrying in ${delay}ms...`);
+        modelIndex++;
+        const delay = baseDelay * Math.pow(2, Math.floor(attempt / models.length));
+        console.log(`Request error: ${error.message}. Trying ${models[modelIndex % models.length]} in ${delay}ms...`);
         await new Promise(resolve => setTimeout(resolve, delay));
       }
     }
 
     if (!response || !response.ok) {
-      throw new Error(`Pollinations API failed after ${maxRetries} attempts: ${lastError}`);
+      throw new Error(`Pollinations API failed after ${maxRetries} attempts with all models: ${lastError}`);
     }
 
     const data = await response.json();
