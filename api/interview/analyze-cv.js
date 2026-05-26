@@ -133,16 +133,27 @@ IMPORTANT: Retourne UNIQUEMENT un JSON valide au format suivant, sans aucun text
         .slice(0, 15);
     }
 
-    // Ensure we have valid questions
+    // Ensure we have valid questions in the correct format
     if (!Array.isArray(questions) || questions.length === 0) {
       questions = generateDefaultQuestions();
     }
 
-    console.log('Extracted questions:', questions.length, questions.slice(0, 2));
+    // Normalize questions to the format: { text: "...", hint: "..." }
+    const normalizedQuestions = questions.map(q => {
+      if (typeof q === 'string') {
+        return { text: q, hint: '' };
+      }
+      return {
+        text: q.text || q.question || JSON.stringify(q),
+        hint: q.hint || ''
+      };
+    });
+
+    console.log('Extracted questions:', normalizedQuestions.length, normalizedQuestions.slice(0, 2));
 
     return res.status(200).json({
       interviewId: `interview_${Date.now()}`,
-      questions: questions.length > 0 ? questions : generateDefaultQuestions(),
+      questions: normalizedQuestions,
       fileName: fileName || 'cv.txt',
     });
   } catch (error) {
