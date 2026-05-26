@@ -13,12 +13,15 @@ export default async function handler(req, res) {
   }
 
   try {
-    // Parse FormData to extract CV file
-    const cv = req.body?.cv || '';
-    const cvText = typeof cv === 'string' ? cv : '';
+    // Extract CV text from JSON body
+    const { cvText, fileName } = req.body || {};
 
-    if (!cvText) {
+    if (!cvText || typeof cvText !== 'string') {
       return res.status(400).json({ error: 'CV text is required' });
+    }
+
+    if (cvText.trim().length === 0) {
+      return res.status(400).json({ error: 'CV text is empty' });
     }
 
     const pollinationsKey = process.env.POLLINATIONS_KEY;
@@ -71,7 +74,7 @@ Retourne un JSON structuré avec un tableau 'questions' contenant chaque questio
     return res.status(200).json({
       interviewId: `interview_${Date.now()}`,
       questions: questions.length > 0 ? questions : generateDefaultQuestions(),
-      fileName: 'cv.txt',
+      fileName: fileName || 'cv.txt',
     });
   } catch (error) {
     console.error('CV analysis error:', error);
