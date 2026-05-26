@@ -100,68 +100,118 @@ IMPORTANT: Retourne UNIQUEMENT un JSON valide sous cette forme EXACTE, sans aucu
     console.log('Full content:', content);
     console.log('=============================');
 
-    // Extract JSON from response - handle various formats
+    // Extract JSON from response - be very aggressive about finding it
     let questions = [];
     
-    // Strategy 1: Find first { and last } to extract JSON
-    const firstBrace = content.indexOf('{');
-    const lastBrace = content.lastIndexOf('}');
-    
-    if (firstBrace !== -1 && lastBrace > firstBrace) {
-      const jsonStr = content.substring(firstBrace, lastBrace + 1);
+    // Try multiple extraction strategies
+    const strategies = [
+      // Strategy 1: Find JSON by looking for "questions" key
+      () => {
+        const match = content.match(/\{[^{}]*"questions"[^{}]*\[[^\]]*\][^{}]*\}/s);
+        if (match) {
+          console.log('Strategy 1: Found questions object');
+          return JSON.parse(match[0]);
+        }
+        return null;
+      },
+      // Strategy 2: Find any complete JSON object
+      () => {
+        const firstBrace = content.indexOf('{');
+        const lastBrace = content.lastIndexOf('}');
+        if (firstBrace !== -1 && lastBrace > firstBrace) {
+          console.log('Strategy 2: Extracting JSON by position');
+          const jsonStr = content.substring(firstBrace, lastBrace + 1);
+          return JSON.parse(jsonStr);
+        }
+        return null;
+      },
+      // Strategy 3: Find any JSON array directly
+      () => {
+        const match = content.match(/\[[^\[\]]*\]/);
+        if (match) {
+          console.log('Strategy 3: Found JSON array');
+          const parsed = JSON.parse(match[0]);
+          if (Array.isArray(parsed)) return { questions: parsed };
+        }
+        return null;
+      }
+    ];
+
+    let parsed = null;
+    for (let i = 0; i < strategies.length; i++) {
       try {
-        console.log('Attempting to parse JSON from positions', firstBrace, 'to', lastBrace);
-        const parsed = JSON.parse(jsonStr);
-        console.log('Successfully parsed JSON, keys:', Object.keys(parsed));
-        
-        // Handle different JSON structures
-        if (Array.isArray(parsed)) {
-          questions = parsed;
-          console.log('JSON is array, questions:', questions.length);
-        } else if (parsed.questions && Array.isArray(parsed.questions)) {
-          questions = parsed.questions;
-          console.log('Found questions array, count:', questions.length);
-        } else if (parsed.data && Array.isArray(parsed.data)) {
-          questions = parsed.data;
-          console.log('Found data array, count:', questions.length);
-        } else {
-          console.log('Parsed object structure:', JSON.stringify(parsed).substring(0, 200));
+        parsed = strategies[i]();
+        if (parsed) {
+          console.log(`Parsing succeeded with strategy ${i + 1}`);
+          break;
         }
       } catch (e) {
-        console.error('JSON parse error:', e.message);
-        console.error('Attempted to parse:', jsonStr.substring(0, 300));
+        console.error(`Strategy ${i + 1} failed:`, e.message);
       }
     }
+
+    // Extract questions array from parsed object
+    if (parsed) {
+      if (Array.isArray(parsed)) {
+        questions = parsed;
+      } else if (parsed.questions && Array.isArray(parsed.questions)) {
+        questions = parsed.questions;
+      } else if (parsed.data && Array.isArray(parsed.data)) {
+        questions = parsed.data;
+      }
+      console.log('Extracted questions count:', questions.length);
+    }
     
-    // If JSON parsing failed, try splitting by newlines as fallback
+    // If JSON parsing failed, try splitting by newlines
     if (!Array.isArray(questions) || questions.length === 0) {
-      console.log('JSON extraction failed, trying line-based extraction');
-      questions = content
-        .split('\n')
-        .filter(q => q.trim().length > 10)
+      console.log('All JSON strategies failed, trying line-based extraction');
+      const lines = content.split('\n');
+      questions = lines
+        .filter(line => {
+          const trimmed = line.trim();
+          return trimmed.length > 10 && !trimmed.startsWith('{') && !trimmed.startsWith('[') && !trimmed.includes(':');
+        })
         .map(q => q.replace(/^\d+\.\s*/, '').trim())
         .slice(0, 15);
-      console.log('Extracted by lines:', questions.length, 'questions');
+      console.log('Line-based extraction found:', questions.length, 'questions');
     }
 
     // Ensure we have valid questions in the correct format
     if (!Array.isArray(questions) || questions.length === 0) {
-      console.log('WARNING: No questions extracted, using default questions. questions type:', typeof questions, 'length:', questions?.length);
+      console.log('WARNING: No questions extracted, using default questions');
       questions = generateDefaultQuestions();
     }
 
+    // Clean up questions array - ensure all are strings
+    questions = questions.filter(q => {
+      if (typeof q === 'string') return q.trim().length > 3;
+      if (q && typeof q === 'object') return (q.text || q.question || '').toString().length > 3;
+      return false;
+    }).slice(0, 15);
+
+    console.log('Final questions count before normalization:', questions.length);
+
     // Normalize questions to the format: { text: "...", hint: "..." }
-    const normalizedQuestions = questions.map(q => {
+    const normalizedQuestions = questions.map((q, idx) => {
+      let text = '';
+      
       if (typeof q === 'string') {
-        return { text: q, hint: '' };
+        text = q.trim();
+      } else if (q && typeof q === 'object') {
+        text = (q.text || q.question || q.label || JSON.stringify(q)).toString().trim();
       }
-      return {
-        text: q.text || q.question || JSON.stringify(q),
-        hint: q.hint || ''
-      };
+      
+      // Remove common numbering patterns
+      text = text.replace(/^\d+[\.\)\:\-]\s*/, '');
+      
+      if (text.length === 0) {
+        text = `Question ${idx + 1}`;
+      }
+      
+      return { text, hint: '' };
     });
 
-    console.log('Extracted questions:', normalizedQuestions.length, normalizedQuestions.slice(0, 2));
+    console.log('Normalized questions:', normalizedQuestions.length, normalizedQuestions.slice(0, 2));
 
     return res.status(200).json({
       interviewId: `interview_${Date.now()}`,
