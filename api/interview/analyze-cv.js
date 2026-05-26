@@ -107,42 +107,45 @@ IMPORTANT: Retourne UNIQUEMENT un JSON valide au format suivant, sans aucun text
     // Extract JSON from response - handle various formats
     let questions = [];
     
-    // Try to extract JSON object - look specifically for "questions" array
-    let jsonMatch = content.match(/\{[\s\S]*"questions"[\s\S]*\}/);
+    // Strategy 1: Find first { and last } to extract JSON
+    const firstBrace = content.indexOf('{');
+    const lastBrace = content.lastIndexOf('}');
     
-    if (!jsonMatch) {
-      // Try more flexible regex
-      jsonMatch = content.match(/\{[\s\S]*\}/);
-    }
-
-    if (jsonMatch) {
+    if (firstBrace !== -1 && lastBrace > firstBrace) {
+      const jsonStr = content.substring(firstBrace, lastBrace + 1);
       try {
-        console.log('Found JSON match, attempting to parse...');
-        const parsed = JSON.parse(jsonMatch[0]);
-        console.log('Successfully parsed JSON:', Object.keys(parsed));
+        console.log('Attempting to parse JSON from positions', firstBrace, 'to', lastBrace);
+        const parsed = JSON.parse(jsonStr);
+        console.log('Successfully parsed JSON, keys:', Object.keys(parsed));
         
         // Handle different JSON structures
         if (Array.isArray(parsed)) {
-          questions = parsed.map(q => typeof q === 'string' ? q : q.text || q.question || JSON.stringify(q));
+          questions = parsed;
+          console.log('JSON is array, questions:', questions.length);
         } else if (parsed.questions && Array.isArray(parsed.questions)) {
-          questions = parsed.questions.map(q => typeof q === 'string' ? q : q.text || q.question || JSON.stringify(q));
-        } else if (parsed.text) {
-          questions = [parsed.text];
+          questions = parsed.questions;
+          console.log('Found questions array, count:', questions.length);
+        } else if (parsed.data && Array.isArray(parsed.data)) {
+          questions = parsed.data;
+          console.log('Found data array, count:', questions.length);
+        } else {
+          console.log('Parsed object structure:', JSON.stringify(parsed).substring(0, 200));
         }
-        console.log('Extracted questions from JSON:', questions.length, questions.slice(0, 2));
       } catch (e) {
-        console.error('JSON parse error:', e.message, 'JSON string:', jsonMatch[0].substring(0, 200));
-        // Fallback: split by newlines
-        questions = content.split('\n').filter(q => q.trim().length > 10 && !q.startsWith('{')).slice(0, 15);
+        console.error('JSON parse error:', e.message);
+        console.error('Attempted to parse:', jsonStr.substring(0, 300));
       }
-    } else {
-      console.log('No JSON found in content, using fallback split by newlines');
-      // Fallback: split by newlines or numbering
+    }
+    
+    // If JSON parsing failed, try splitting by newlines as fallback
+    if (!Array.isArray(questions) || questions.length === 0) {
+      console.log('JSON extraction failed, trying line-based extraction');
       questions = content
         .split('\n')
         .filter(q => q.trim().length > 10)
         .map(q => q.replace(/^\d+\.\s*/, '').trim())
         .slice(0, 15);
+      console.log('Extracted by lines:', questions.length, 'questions');
     }
 
     // Ensure we have valid questions in the correct format
