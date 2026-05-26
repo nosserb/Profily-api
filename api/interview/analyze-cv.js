@@ -32,14 +32,8 @@ export default async function handler(req, res) {
     const systemPrompt = `Tu es un expert en recrutement et en intelligence artificielle spécialisé dans l'analyse de CV.
 Analyse le CV suivant et génère exactement 15 questions d'entretien personnalisées basées sur les compétences, l'expérience et les formations du candidat.
 Les questions doivent être pertinentes, professionnelles et progressives en difficulté.
-IMPORTANT: Retourne UNIQUEMENT un JSON valide au format suivant, sans aucun texte avant ou après:
-{
-  "questions": [
-    "Première question?",
-    "Deuxième question?",
-    ...
-  ]
-}`;
+IMPORTANT: Retourne UNIQUEMENT un JSON valide sous cette forme EXACTE, sans aucun texte avant ou après:
+{"questions": ["Question 1?", "Question 2?", "Question 3?", "Question 4?", "Question 5?", "Question 6?", "Question 7?", "Question 8?", "Question 9?", "Question 10?", "Question 11?", "Question 12?", "Question 13?", "Question 14?", "Question 15?"]}`;
 
     // Retry logic for rate limiting
     let response;
@@ -101,8 +95,10 @@ IMPORTANT: Retourne UNIQUEMENT un JSON valide au format suivant, sans aucun text
     const data = await response.json();
     const content = data.choices?.[0]?.message?.content || '';
 
-    console.log('Mistral response content:', content.substring(0, 500));
-    console.log('Content length:', content.length);
+    console.log('=== MISTRAL RESPONSE DEBUG ===');
+    console.log('Full content length:', content.length);
+    console.log('Full content:', content);
+    console.log('=============================');
 
     // Extract JSON from response - handle various formats
     let questions = [];
