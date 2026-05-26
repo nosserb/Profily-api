@@ -41,30 +41,61 @@ IMPORTANT: Retourne UNIQUEMENT un JSON valide au format suivant, sans aucun text
   ]
 }`;
 
-    const response = await fetch('https://gen.pollinations.ai/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${pollinationsKey}`,
-      },
-      body: JSON.stringify({
-        model: 'mistral',
-        messages: [
-          { role: 'system', content: systemPrompt },
-          { role: 'user', content: `Analyse ce CV et génère les questions:\n\n${cvText}` },
-        ],
-        temperature: 0.7,
-      }),
-    });
+    // Retry logic for rate limiting
+    let response;
+    let lastError;
+    const maxRetries = 3;
+    const baseDelay = 1000; // 1 second
 
-    if (!response.ok) {
-      const errText = await response.text();
-      console.error('Pollinations error:', {
-        status: response.status,
-        keyPrefix: pollinationsKey?.substring(0, 5),
-        error: errText?.substring(0, 500),
-      });
-      throw new Error(`Pollinations API returned ${response.status}: ${errText}`);
+    for (let attempt = 0; attempt < maxRetries; attempt++) {
+      try {
+        response = await fetch('https://gen.pollinations.ai/v1/chat/completions', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${pollinationsKey}`,
+          },
+          body: JSON.stringify({
+            model: 'mistral',
+            messages: [
+              { role: 'system', content: systemPrompt },
+              { role: 'user', content: `Analyse ce CV et génère les questions:\n\n${cvText}` },
+            ],
+            temperature: 0.7,
+          }),
+        });
+
+        if (response.ok) {
+          break; // Success, exit retry loop
+        }
+
+        const errText = await response.text();
+        lastError = errText;
+
+        // If 429 (too many requests) or 502 (bad gateway), retry
+        if (response.status === 429 || response.status === 502) {
+          if (attempt < maxRetries - 1) {
+            const delay = baseDelay * Math.pow(2, attempt); // Exponential backoff
+            console.log(`Rate limited (${response.status}). Retrying in ${delay}ms... (attempt ${attempt + 1}/${maxRetries})`);
+            await new Promise(resolve => setTimeout(resolve, delay));
+            continue;
+          }
+        }
+
+        throw new Error(`Pollinations API returned ${response.status}: ${errText}`);
+      } catch (error) {
+        if (attempt === maxRetries - 1) {
+          throw error;
+        }
+        lastError = error.message;
+        const delay = baseDelay * Math.pow(2, attempt);
+        console.log(`Request failed: ${error.message}. Retrying in ${delay}ms...`);
+        await new Promise(resolve => setTimeout(resolve, delay));
+      }
+    }
+
+    if (!response || !response.ok) {
+      throw new Error(`Pollinations API failed after ${maxRetries} attempts: ${lastError}`);
     }
 
     const data = await response.json();

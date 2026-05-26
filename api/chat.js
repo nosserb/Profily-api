@@ -28,27 +28,61 @@ export default async function handler(req, res) {
     const messages = Array.isArray(conversationHistory) ? conversationHistory : [];
     messages.push({ role: 'user', content: message });
 
-    // Call Pollinations API
-    const response = await fetch('https://gen.pollinations.ai/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${pollinationsKey}`,
-      },
-      body: JSON.stringify({
-        model: 'mistral',
-        messages: messages,
-        temperature: 0.7,
-        max_tokens: 2000,
-      }),
-    });
+    // Call Pollinations API with retry logic
+    let response;
+    let lastError;
+    const maxRetries = 3;
+    const baseDelay = 1000;
 
-    if (!response.ok) {
-      const errorText = await response.text();
-      console.error('Pollinations API error:', response.status, errorText);
+    for (let attempt = 0; attempt < maxRetries; attempt++) {
+      try {
+        response = await fetch('https://gen.pollinations.ai/v1/chat/completions', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${pollinationsKey}`,
+          },
+          body: JSON.stringify({
+            model: 'mistral',
+            messages: messages,
+            temperature: 0.7,
+            max_tokens: 2000,
+          }),
+        });
+
+        if (response.ok) {
+          break;
+        }
+
+        const errText = await response.text();
+        lastError = errText;
+
+        // Retry on 429 (rate limit) or 502 (bad gateway)
+        if (response.status === 429 || response.status === 502) {
+          if (attempt < maxRetries - 1) {
+            const delay = baseDelay * Math.pow(2, attempt);
+            console.log(`Chat rate limited (${response.status}). Retrying in ${delay}ms...`);
+            await new Promise(resolve => setTimeout(resolve, delay));
+            continue;
+          }
+        }
+
+        throw new Error(`Pollinations API returned ${response.status}`);
+      } catch (error) {
+        if (attempt === maxRetries - 1) {
+          throw error;
+        }
+        lastError = error.message;
+        const delay = baseDelay * Math.pow(2, attempt);
+        console.log(`Chat request failed. Retrying in ${delay}ms...`);
+        await new Promise(resolve => setTimeout(resolve, delay));
+      }
+    }
+
+    if (!response || !response.ok) {
       return res.status(502).json({
-        error: `Pollinations API error: ${response.status}`,
-        details: errorText,
+        error: `Pollinations API error after ${maxRetries} attempts`,
+        details: lastError,
       });
     }
 

@@ -64,29 +64,55 @@ export default async function handler(req, res) {
         return res.status(400).json({ error: "Le champ cvText est obligatoire." });
       }
 
-      const response = await fetch("https://gen.pollinations.ai/v1/chat/completions", {
-        method: "POST",
-        headers: {
-          ...(pKey ? { Authorization: `Bearer ${pKey}` } : {}),
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          messages: [
-            {
-              role: "system",
-              content:
-                "Tu es un expert en recrutement. Retourne uniquement un JSON strict au format {\"questions\":[{\"text\":\"...\",\"hint\":\"...\"}]} avec 5 questions max.",
-            },
-            { role: "user", content: `Voici le CV : ${cvText}` },
-          ],
-          model: "mistral",
-          temperature: 0.3,
-        }),
-      });
+      // Retry logic for rate limiting
+      let response;
+      let lastError;
+      const maxRetries = 3;
+      const baseDelay = 1000;
 
-      if (!response.ok) {
-        const errText = await response.text();
-        return res.status(502).json({ error: `Pollinations HTTP ${response.status}`, details: errText.slice(0, 500) });
+      for (let attempt = 0; attempt < maxRetries; attempt++) {
+        try {
+          response = await fetch("https://gen.pollinations.ai/v1/chat/completions", {
+            method: "POST",
+            headers: {
+              ...(pKey ? { Authorization: `Bearer ${pKey}` } : {}),
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              messages: [
+                {
+                  role: "system",
+                  content:
+                    "Tu es un expert en recrutement. Retourne uniquement un JSON strict au format {\"questions\":[{\"text\":\"...\",\"hint\":\"...\"}]} avec 5 questions max.",
+                },
+                { role: "user", content: `Voici le CV : ${cvText}` },
+              ],
+              model: "mistral",
+              temperature: 0.3,
+            }),
+          });
+
+          if (response.ok) break;
+
+          const errText = await response.text();
+          lastError = errText;
+
+          if (response.status === 429 || response.status === 502) {
+            if (attempt < maxRetries - 1) {
+              const delay = baseDelay * Math.pow(2, attempt);
+              console.log(`Rate limited (${response.status}). Retrying in ${delay}ms...`);
+              await new Promise(resolve => setTimeout(resolve, delay));
+              continue;
+            }
+          }
+          throw new Error(`HTTP ${response.status}`);
+        } catch (error) {
+          if (attempt === maxRetries - 1) {
+            return res.status(502).json({ error: `Pollinations HTTP ${lastError?.status || error.message}`, details: lastError?.slice?.(0, 500) || error.message });
+          }
+          const delay = baseDelay * Math.pow(2, attempt);
+          await new Promise(resolve => setTimeout(resolve, delay));
+        }
       }
 
       const payload = await response.json();
