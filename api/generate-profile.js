@@ -64,7 +64,7 @@ export default async function handler(req, res) {
         return res.status(400).json({ error: "Le champ cvText est obligatoire." });
       }
 
-      const response = await fetch("https://text.pollinations.ai/openai", {
+      const response = await fetch("https://gen.pollinations.ai/v1/chat/completions", {
         method: "POST",
         headers: {
           ...(pKey ? { Authorization: `Bearer ${pKey}` } : {}),
@@ -79,7 +79,7 @@ export default async function handler(req, res) {
             },
             { role: "user", content: `Voici le CV : ${cvText}` },
           ],
-          model: "mistral",
+          model: "openai",
           temperature: 0.3,
         }),
       });

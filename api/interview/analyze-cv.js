@@ -34,14 +34,14 @@ Analyse le CV suivant et génère 15 questions d'entretien personnalisées basé
 Les questions doivent être pertinentes, professionnelles et progressives en difficulté.
 Retourne un JSON structuré avec un tableau 'questions' contenant chaque question.`;
 
-    const response = await fetch('https://text.pollinations.ai/openai', {
+    const response = await fetch('https://gen.pollinations.ai/v1/chat/completions', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${pollinationsKey}`,
       },
       body: JSON.stringify({
-        model: 'gpt-4-turbo',
+        model: 'openai',
         messages: [
           { role: 'system', content: systemPrompt },
           { role: 'user', content: `Analyse ce CV et génère les questions:\n\n${cvText}` },

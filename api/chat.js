@@ -29,14 +29,14 @@ export default async function handler(req, res) {
     messages.push({ role: 'user', content: message });
 
     // Call Pollinations API
-    const response = await fetch('https://text.pollinations.ai/openai', {
+    const response = await fetch('https://gen.pollinations.ai/v1/chat/completions', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${pollinationsKey}`,
       },
       body: JSON.stringify({
-        model: 'gpt-4-turbo',
+        model: 'openai',
         messages: messages,
         temperature: 0.7,
         max_tokens: 2000,
