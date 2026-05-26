@@ -8,27 +8,28 @@ export default async function handler(req, res) {
     return res.status(200).end();
   }
 
-  // Extract path from req.url
-  const path = req.url || '/';
+  // Extract path from req.url or slug
+  const slug = Array.isArray(req.query.slug) ? req.query.slug.join('/') : req.query.slug || '';
+  const path = `/${slug}`;
   
-  // Route old interview endpoints to new generate-profile endpoint
-  if (path.includes('/api/interview/analyze-cv')) {
+  // Route old interview endpoints
+  if (path.includes('analyze-cv')) {
     return handleAnalyzeCv(req, res);
   }
   
-  if (path.includes('/api/interview/answer')) {
+  if (path.includes('answer')) {
     return handleAnswer(req, res);
   }
   
-  if (path.includes('/api/interview/finish')) {
+  if (path.includes('finish')) {
     return handleFinish(req, res);
   }
 
-  if (path.includes('/api/interview/pollinations/status')) {
+  if (path.includes('pollinations/status')) {
     return handlePollinationsStatus(req, res);
   }
 
-  if (path.includes('/api/interview/pollinations/connect')) {
+  if (path.includes('pollinations/connect')) {
     return handlePollinationsConnect(req, res);
   }
 
